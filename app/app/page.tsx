@@ -6,6 +6,12 @@ import { PromptPanel } from "@/components/app/prompt-panel"
 import { StatusPanel } from "@/components/app/status-panel"
 import { PrivacyPanel } from "@/components/app/privacy-panel"
 
+interface Policy {
+  allow_networking: boolean;
+  allow_hybrid_compute: boolean;
+  allow_telemetry: boolean;
+}
+
 export default function AppPage() {
   const [selectedModel, setSelectedModel] = useState<string>("llama-3.2-3b")
   const [runtimeMode, setRuntimeMode] = useState<"local" | "hybrid">("local")
@@ -18,45 +24,85 @@ export default function AppPage() {
     modelDownloads: true,
     telemetry: false,
   })
+  const [currentExecutionId, setCurrentExecutionId] = useState<string | null>(null)
 
   const handleRun = async () => {
     if (!prompt.trim()) return
     setIsRunning(true)
     setOutput("")
     try {
-      const response = await fetch('/api/run_prompt', {
+      const policy: Policy = {
+        allow_networking: false,
+        allow_hybrid_compute: permissions.decentralizedCompute,
+        allow_telemetry: permissions.telemetry,
+      }
+      const startResponse = await fetch('http://localhost:3000/execution/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, policy }),
       })
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      if (!startResponse.ok) {
+        throw new Error(`HTTP error! status: ${startResponse.status}`)
       }
-      const text = await response.text()
-      setOutput(text)
+      const { id } = await startResponse.json()
+      setCurrentExecutionId(id)
+
+      // Connect to WebSocket
+      const ws = new WebSocket(`ws://localhost:3000/ws/execution/${id}`)
+      ws.onmessage = (event) => {
+        const status = JSON.parse(event.data)
+        if (status.state === 'Completed') {
+          setOutput(status.result || '')
+          setIsRunning(false)
+          setCurrentExecutionId(null)
+          ws.close()
+        } else if (status.state === 'Failed') {
+          setOutput(`Error: ${status.error || 'Unknown error'}`)
+          setIsRunning(false)
+          setCurrentExecutionId(null)
+          ws.close()
+        } else if (status.state === 'Cancelled') {
+          setOutput('Execution cancelled')
+          setIsRunning(false)
+          setCurrentExecutionId(null)
+          ws.close()
+        }
+        // For Running/Queued, just update UI if needed
+      }
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+        setOutput('WebSocket connection failed')
+        setIsRunning(false)
+        setCurrentExecutionId(null)
+      }
     } catch (error) {
       setOutput(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
       setIsRunning(false)
+      setCurrentExecutionId(null)
     }
   }
 
   const handleStop = async () => {
-    setIsRunning(false)
-    try {
-      await fetch('/api/stop', {
-        method: 'POST',
-      })
-    } catch (error) {
-      console.error('Failed to stop:', error)
+    if (currentExecutionId) {
+      try {
+        await fetch(`http://localhost:3000/execution/cancel/${currentExecutionId}`, {
+          method: 'POST',
+        })
+        setOutput('Execution cancelled')
+      } catch (error) {
+        console.error('Failed to cancel:', error)
+      }
     }
+    setIsRunning(false)
+    setCurrentExecutionId(null)
   }
 
   const handleClear = () => {
     setPrompt("")
     setOutput("")
+    setCurrentExecutionId(null)
   }
 
   return (
