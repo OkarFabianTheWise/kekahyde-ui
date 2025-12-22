@@ -19,17 +19,39 @@ export default function AppPage() {
     telemetry: false,
   })
 
-  const handleRun = () => {
+  const handleRun = async () => {
+    if (!prompt.trim()) return
     setIsRunning(true)
-    // Simulate AI processing
-    setTimeout(() => {
-      setOutput("Model response would appear here...")
+    setOutput("")
+    try {
+      const response = await fetch('/api/run_prompt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt }),
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const text = await response.text()
+      setOutput(text)
+    } catch (error) {
+      setOutput(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
       setIsRunning(false)
-    }, 2000)
+    }
   }
 
-  const handleStop = () => {
+  const handleStop = async () => {
     setIsRunning(false)
+    try {
+      await fetch('/api/stop', {
+        method: 'POST',
+      })
+    } catch (error) {
+      console.error('Failed to stop:', error)
+    }
   }
 
   const handleClear = () => {
