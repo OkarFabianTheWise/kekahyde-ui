@@ -1,6 +1,7 @@
 const { app, BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
+const express = require('express');
 
 let rustProcess = null;
 let nextProcess = null;
@@ -19,8 +20,8 @@ function createWindow() {
 
     // Load the app
     if (app.isPackaged) {
-        // Load the built static files
-        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+        // Load the static server
+        mainWindow.loadURL('http://localhost:3000');
     } else {
         // Load the Next.js dev server
         mainWindow.loadURL('http://localhost:3001');
@@ -73,6 +74,15 @@ function startRustRuntime() {
     // Handle process error
     rustProcess.on('error', (error) => {
         console.error('Failed to start Rust process:', error);
+    });
+}
+
+function startStaticServer() {
+    const staticApp = express();
+    staticApp.use(express.static(path.join(__dirname, '..', 'dist')));
+    staticApp.listen(3000, () => {
+        console.log('Static server started on port 3000');
+        createWindow();
     });
 }
 
@@ -143,7 +153,16 @@ async function waitForServer(url, timeout = 30000) {
 }
 
 app.whenReady().then(async () => {
-    if (!app.isPackaged) {
+    // Start the Rust runtime
+    startRustRuntime();
+
+    // Start health monitoring
+    checkHealth();
+
+    if (app.isPackaged) {
+        // Start the static server
+        startStaticServer();
+    } else {
         // Start the Next.js dev server only in development
         startNextJs();
 
@@ -154,16 +173,10 @@ app.whenReady().then(async () => {
             app.quit();
             return;
         }
+
+        // Create the main window
+        createWindow();
     }
-
-    // Start the Rust runtime
-    startRustRuntime();
-
-    // Start health monitoring
-    checkHealth();
-
-    // Create the main window
-    createWindow();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
