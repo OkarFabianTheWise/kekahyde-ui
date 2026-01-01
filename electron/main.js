@@ -156,6 +156,14 @@ app.whenReady().then(async () => {
     // Start the Rust runtime
     startRustRuntime();
 
+    // Wait for Rust server to be ready
+    const rustReady = await waitForServer('http://127.0.0.1:3000/status');
+    if (!rustReady) {
+        console.error('Rust server failed to start within timeout');
+        app.quit();
+        return;
+    }
+
     // Start health monitoring
     checkHealth();
 

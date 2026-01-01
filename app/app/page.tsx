@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { SystemSidebar } from "@/components/app/system-sidebar"
 import { PromptPanel } from "@/components/app/prompt-panel"
 import { StatusPanel } from "@/components/app/status-panel"
@@ -25,6 +25,29 @@ export default function AppPage() {
     telemetry: false,
   })
   const [currentExecutionId, setCurrentExecutionId] = useState<string | null>(null)
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [initMessage, setInitMessage] = useState("Initializing AI runtime...")
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/status')
+        if (response.ok) {
+          setIsInitializing(false)
+        } else {
+          setInitMessage("AI runtime starting up...")
+        }
+      } catch (error) {
+        setInitMessage("AI runtime starting up...")
+      }
+    }
+
+    if (isInitializing) {
+      checkStatus()
+      const interval = setInterval(checkStatus, 2000)
+      return () => clearInterval(interval)
+    }
+  }, [isInitializing])
 
   const handleRun = async () => {
     if (!prompt.trim()) return
@@ -103,6 +126,19 @@ export default function AppPage() {
     setPrompt("")
     setOutput("")
     setCurrentExecutionId(null)
+  }
+
+  if (isInitializing) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background grain-texture">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <h2 className="text-lg font-mono mb-2">Initializing Kekahyde</h2>
+          <p className="text-sm text-muted-foreground font-mono">{initMessage}</p>
+          <p className="text-xs text-muted-foreground mt-2">This may take a few minutes on first run while downloading the AI model.</p>
+        </div>
+      </div>
+    )
   }
 
   return (
